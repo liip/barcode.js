@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>Barcode</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    </head>
+    <body style="margin: 0; background: -webkit-gradient(linear, 0% 0%, 0% 100%, from(#eee), to(#fff)) no-repeat; font-size: 14px;">
+        <form id="form">
+            <div style="background-color: #fff; border-bottom: 1px solid #ddd;"><input type="file" id="file" style="width: 280px; line-height: 18px; padding: 20px;" /></div>
+
+            <p id="isbn" style="font-family: Helvetica, sans-serif; width: 320px; line-height: 18px; padding: 0; text-align: center;">Please select a photo above.</p>
+
+            <img id="image" width="2000" height="1500" style="display: none;" />
+
+            <canvas id="canvas" width="2000" height="1500" style="width: 320px; height: 240px;"></canvas>
+        </form>
+        <script>
+
+            try {
+
+                document.getElementById('file').onchange = function() {
+
+                    document.getElementById('isbn').innerHTML = 'Processing…';
+
+                    var image = document.getElementById('image');
+                    var width = image.width;
+                    var height = image.height;
+
+                    image.onload = function () {
+
+                        var context = document.getElementById('canvas').getContext("2d");
+                        context.drawImage(image, 0, 0, width, height);
+
+                        var spoints = [1, 9, 2, 8, 3, 7, 4, 6, 5];
+                        var scan = spoints.length;
+                        var step = height / (scan + 1);
+                        var best = 99;
+                        var bestIsbn = '';
+                        var bestRow = 0;
+                        var bestBits = [];
+
+                        while (scan--) {
+                            var row = step * spoints[scan];
+                            var line = context.getImageData(0, row, width, 1).data;
+
+                            var min = 0, max = 255;
+                            var greys = [];
+                            for (var col = 0; col < width; col++) {
+
+                                var i = col * 4;
+
+                                var grey = (line[i] + line[i + 1] + line[i + 2]) / 3;
+                                greys.push(grey);
+
+                                min = Math.min(min, grey);
+                                max = Math.max(max, grey);
+                            }
+
+                            var pivot = (max + min) / 2;
+                            var bits = [];
+                            for (var col = 0; col < width; col++) {
+    
+                                var bit = greys[col] * 1.2 <= pivot ? 0 : 255;
+                                bits.push(bit);
+
+                            }
+
+                            // decode barcode
+                            var MAX_VARIANCE = 0.5;
+                            var PATTERNS = {
+                                '3211': '0',
+                                '2221': '1',
+                                '2122': '2',
+                                '1411': '3',
+                                '1132': '4',
+                                '1231': '5',
+                                '1114': '6',
+                                '1312': '7',
+                                '1213': '8',
+                                '3112': '9'
+                            };
+                            var FIRST_DIGITS= {
+                                'LLLLLL': '0',
+                                'LLGLGG': '1',
+                                'LLGGLG': '2',
+                                'LLGGGL': '3',
+                                'LGLLGG': '4',
+                                'LGGLLG': '5',
+                                'LGGGLL': '6',
+                                'LGLGLG': '7',
+                                'LGLGGL': '8',
+                                'LGGLGL': '9'
+                            };
+    
+                            // run length encoding
+                            var lines = [];
+                            var current = bits[0];
+                            var count = 0;
+                            for (var col = 0; col < width; col++) {
+                                if (bits[col] == current) {
+                                    count++;
+                                } else {
+                                    lines.push(count);
+                                    count = 1;
+                                    current = bits[col];
+                                }
+                            }
+                            lines.push(count);
+                            console.log(lines);
+
+                            // find start
+                            var bar = 0, start = 0, end = 0;
+                            for (var i = 0; i < (lines.length - 3); i++) {
+
+                                var all = lines.slice(i, i + 59);
+
+                                var total = 0;
+                                for (var j = 0; j < all.length; j++) {
+                                    total += all[j];
+                                }
+                                var bar = total / 95;
+
+                                var variance = (lines[i] / bar) * (lines[i + 1] / bar) * (lines[i + 2] / bar);
+                                console.log('START ========');
+                                console.log(lines[i] + ', ' + lines[i + 1] + ', ' + lines[i + 2]);
+                                console.log(variance);
+
+                                if (Math.abs(1 - variance) < MAX_VARIANCE) {
+
+                                    // check middle
+                                    var variance = (lines[i + 27] / bar) * (lines[i + 28] / bar) * (lines[i + 29] / bar) * (lines[i + 30] / bar) * (lines[i + 31] / bar);
+                                    console.log(lines[i + 27] + ', ' + lines[i + 28] + ', ' + lines[i + 29] + ', ' + lines[i + 30] + ', ' + lines[i + 31]);
+                                    console.log(variance);
+    
+                                    if (Math.abs(1 - variance) < MAX_VARIANCE) {
+
+                                        // check end
+                                        var variance = (lines[i + 56] / bar) * (lines[i + 57] / bar) * (lines[i + 58] / bar);
+                                        console.log(lines[i + 56] + ', ' + lines[i + 57] + ', ' + lines[i + 58]);
+                                        console.log(variance);
+
+                                        if (Math.abs(1 - variance) < MAX_VARIANCE) {
+
+                                            end = i + 59;
+                                            start = i + 3;
+
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            /*console.log('START');
+                            console.log(start);
+                            console.log(end);
+                            for (var i = 0; i < bits.length; i++) {                        
+                                context.fillStyle = 'rgb(' + bits[i] + ', ' + bits[i] + ', ' + bits[i] + ')';
+                                context.fillRect(i, row, width, 100);
+                            }
+                            context.fillStyle = 'rgba(255, 0, 0, 0.5)';
+                            context.fillRect(0, row, width, 10);*/
+
+                            var GROUP = 6;
+
+                            var isbn = '';
+                            var sum = '';
+
+                            var bars = lines.slice(start, start + 4 * GROUP);
+                            bars = bars.concat(lines.slice(start + 4 * GROUP + 5, start + 4 * 2 * GROUP + 5));
+                            for (var i = 0; i < 2 * GROUP; i++) {
+
+                                var digits = [
+                                    Math.round(bars[i * 4] / bar),
+                                    Math.round(bars[i * 4 + 1] / bar),
+                                    Math.round(bars[i * 4 + 2] / bar),
+                                    Math.round(bars[i * 4 + 3] / bar)
+                                ];
+                                console.log(digits.join(''));
+                                var pattern = PATTERNS[digits.join('')];
+                                if (pattern) {
+                                    sum += 'L';
+                                } else {
+                                    sum += 'G';
+                                    pattern = PATTERNS[digits.reverse().join('')] || 'X';
+                                }
+                                isbn += pattern;
+                            }
+
+                            var first = FIRST_DIGITS[sum.substr(0, 6)] || 'X';
+                            isbn = first + isbn;
+
+                            var count = isbn.split('X').length;
+                            if (count < best) {
+                                best = count;
+                                bestRow = row;
+                                bestIsbn = isbn;
+                                bestBits = bits;
+                                if (isbn.indexOf('X') == -1) {
+                                    break;
+                                }
+                            }
+                        }
+
+                        document.getElementById('isbn').innerHTML = bestIsbn;
+
+                        for (var i = 0; i < bestBits.length; i++) {                        
+                            context.fillStyle = 'rgb(' + bestBits[i] + ', ' + bestBits[i] + ', ' + bestBits[i] + ')';
+                            context.fillRect(i, bestRow, width, 100);
+                        }
+
+                        context.fillStyle = 'rgba(255, 0, 0, 0.5)';
+                        context.fillRect(0, bestRow, width, 10);
+                    };
+
+                    var reader = new FileReader();
+                    image.src = window.webkitURL.createObjectURL(this.files[0]);
+                };
+
+            } catch (e) {
+                alert(e);
+            }
+            
+        </script>
+    </body>
+</html>
