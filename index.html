@@ -11,11 +11,196 @@
 
             <p id="isbn" style="font-family: Helvetica, sans-serif; width: 320px; line-height: 18px; padding: 0; text-align: center;">Please select a photo above.</p>
 
-            <img id="image" width="2000" height="1500" style="display: none;" />
-
             <canvas id="canvas" width="2000" height="1500" style="width: 320px; height: 240px;"></canvas>
         </form>
         <script>
+
+            var Barcode = function (context, width, height) {
+                this.context = context;
+                this.width = width;
+                this.height = height;
+                this.debug = false;
+                this.best = {count: 14};
+            };
+
+            Barcode.MAX_VARIANCE = 0.5;
+            Barcode.PATTERNS = {
+                '3211': '0',
+                '2221': '1',
+                '2122': '2',
+                '1411': '3',
+                '1132': '4',
+                '1231': '5',
+                '1114': '6',
+                '1312': '7',
+                '1213': '8',
+                '3112': '9'
+            };
+            Barcode.FIRST_DIGITS= {
+                'LLLLLL': '0',
+                'LLGLGG': '1',
+                'LLGGLG': '2',
+                'LLGGGL': '3',
+                'LGLLGG': '4',
+                'LGGLLG': '5',
+                'LGGGLL': '6',
+                'LGLGLG': '7',
+                'LGLGGL': '8',
+                'LGGLGL': '9'
+            };
+
+            Barcode.prototype.scan = function (row) {
+
+                var line = new BarcodeLine(this.context, this.width, row);
+
+                if (line.count < this.best.count) {
+                    this.best = line;
+                    if (line.count == -1) {
+                        return true;
+                    }
+                }
+
+                return false;
+            };
+            
+            var BarcodeLine = function (context, width, row) {
+                this.context = context;
+                this.width = width;
+                this.row = row;
+                this.data = this.context.getImageData(0, this.row, this.width, 1).data;
+                this.bits = BarcodeLine.convert(this.data, this.width);
+                this.isbn = BarcodeLine.parse(this.bits);
+                this.count = this.isbn.split('X').length;
+            };
+            
+            BarcodeLine.prototype.print = function () {
+
+                for (var i = 0; i < this.bits.length; i++) {                        
+                    this.context.fillStyle = 'rgb(' + this.bits[i] + ', ' + this.bits[i] + ', ' + this.bits[i] + ')';
+                    this.context.fillRect(i, this.row, 1, 100);
+                }
+
+                this.context.fillStyle = 'rgba(255, 0, 0, 0.5)';
+                this.context.fillRect(0, this.row, this.width, 10);
+            };
+
+            BarcodeLine.convert = function (line, width) {
+
+                var min = 0, max = 255, bits = [];
+                var greys = [];
+                for (var col = 0; col < width; col++) {
+
+                    var i = col * 4;
+
+                    var grey = (line[i] + line[i + 1] + line[i + 2]) / 3;
+                    greys.push(grey);
+
+                    min = Math.min(min, grey);
+                    max = Math.max(max, grey);
+                }
+
+                var pivot = (max + min) / 2;
+                for (var col = 0; col < width; col++) {
+
+                    var bit = greys[col] * 1.2 <= pivot ? 0 : 255;
+                    bits.push(bit);
+                }
+
+                return bits;
+            };
+
+            BarcodeLine.parse = function (bits) {
+
+                // run length encoding
+                var lines = [];
+                var current = bits[0];
+                var count = 0;
+                for (var col = 0; col < bits.length; col++) {
+                    if (bits[col] == current) {
+                        count++;
+                    } else {
+                        lines.push(count);
+                        count = 1;
+                        current = bits[col];
+                    }
+                }
+                lines.push(count);
+                console.log(lines);
+
+                // find start
+                var bar = 0, start = 0, end = 0;
+                for (var i = 0; i < (lines.length - 3); i++) {
+
+                    var all = lines.slice(i, i + 59);
+
+                    var total = 0;
+                    for (var j = 0; j < all.length; j++) {
+                        total += all[j];
+                    }
+                    var bar = total / 95;
+
+                    var variance = (lines[i] / bar) * (lines[i + 1] / bar) * (lines[i + 2] / bar);
+                    console.log('START ========');
+                    console.log(lines[i] + ', ' + lines[i + 1] + ', ' + lines[i + 2]);
+                    console.log(variance);
+
+                    if (Math.abs(1 - variance) < Barcode.MAX_VARIANCE) {
+
+                        // check middle
+                        var variance = (lines[i + 27] / bar) * (lines[i + 28] / bar) * (lines[i + 29] / bar) * (lines[i + 30] / bar) * (lines[i + 31] / bar);
+                        console.log(lines[i + 27] + ', ' + lines[i + 28] + ', ' + lines[i + 29] + ', ' + lines[i + 30] + ', ' + lines[i + 31]);
+                        console.log(variance);
+
+                        if (Math.abs(1 - variance) < Barcode.MAX_VARIANCE) {
+
+                            // check end
+                            var variance = (lines[i + 56] / bar) * (lines[i + 57] / bar) * (lines[i + 58] / bar);
+                            console.log(lines[i + 56] + ', ' + lines[i + 57] + ', ' + lines[i + 58]);
+                            console.log(variance);
+
+                            if (Math.abs(1 - variance) < Barcode.MAX_VARIANCE) {
+
+                                end = i + 59;
+                                start = i + 3;
+
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // decode barcode
+                var GROUP = 6;
+
+                var isbn = '';
+                var sum = '';
+
+                var bars = lines.slice(start, start + 4 * GROUP);
+                bars = bars.concat(lines.slice(start + 4 * GROUP + 5, start + 4 * 2 * GROUP + 5));
+                for (var i = 0; i < 2 * GROUP; i++) {
+
+                    var digits = [
+                        Math.round(bars[i * 4] / bar),
+                        Math.round(bars[i * 4 + 1] / bar),
+                        Math.round(bars[i * 4 + 2] / bar),
+                        Math.round(bars[i * 4 + 3] / bar)
+                    ];
+                    console.log(digits.join(''));
+                    var pattern = Barcode.PATTERNS[digits.join('')];
+                    if (pattern) {
+                        sum += 'L';
+                    } else {
+                        sum += 'G';
+                        pattern = Barcode.PATTERNS[digits.reverse().join('')] || 'X';
+                    }
+                    isbn += pattern;
+                }
+
+                var first = Barcode.FIRST_DIGITS[sum.substr(0, 6)] || 'X';
+                var isbn = first + isbn;
+                
+                return isbn;
+            };
 
             try {
 
@@ -23,13 +208,15 @@
 
                     document.getElementById('isbn').innerHTML = 'Processing…';
 
-                    var image = document.getElementById('image');
-                    var width = image.width;
-                    var height = image.height;
+                    var image = new Image();
 
                     image.onload = function () {
 
-                        var context = document.getElementById('canvas').getContext("2d");
+                        var canvas = document.getElementById('canvas');
+                        var width = canvas.width;
+                        var height = canvas.height;
+
+                        var context = canvas.getContext("2d");
                         context.drawImage(image, 0, 0, width, height);
 
                         var spoints = [1, 9, 2, 8, 3, 7, 4, 6, 5];
@@ -40,177 +227,16 @@
                         var bestRow = 0;
                         var bestBits = [];
 
+                        var barcode = new Barcode(context, width, height);
+
                         while (scan--) {
                             var row = step * spoints[scan];
-                            var line = context.getImageData(0, row, width, 1).data;
-
-                            var min = 0, max = 255;
-                            var greys = [];
-                            for (var col = 0; col < width; col++) {
-
-                                var i = col * 4;
-
-                                var grey = (line[i] + line[i + 1] + line[i + 2]) / 3;
-                                greys.push(grey);
-
-                                min = Math.min(min, grey);
-                                max = Math.max(max, grey);
-                            }
-
-                            var pivot = (max + min) / 2;
-                            var bits = [];
-                            for (var col = 0; col < width; col++) {
-    
-                                var bit = greys[col] * 1.2 <= pivot ? 0 : 255;
-                                bits.push(bit);
-
-                            }
-
-                            // decode barcode
-                            var MAX_VARIANCE = 0.5;
-                            var PATTERNS = {
-                                '3211': '0',
-                                '2221': '1',
-                                '2122': '2',
-                                '1411': '3',
-                                '1132': '4',
-                                '1231': '5',
-                                '1114': '6',
-                                '1312': '7',
-                                '1213': '8',
-                                '3112': '9'
-                            };
-                            var FIRST_DIGITS= {
-                                'LLLLLL': '0',
-                                'LLGLGG': '1',
-                                'LLGGLG': '2',
-                                'LLGGGL': '3',
-                                'LGLLGG': '4',
-                                'LGGLLG': '5',
-                                'LGGGLL': '6',
-                                'LGLGLG': '7',
-                                'LGLGGL': '8',
-                                'LGGLGL': '9'
-                            };
-    
-                            // run length encoding
-                            var lines = [];
-                            var current = bits[0];
-                            var count = 0;
-                            for (var col = 0; col < width; col++) {
-                                if (bits[col] == current) {
-                                    count++;
-                                } else {
-                                    lines.push(count);
-                                    count = 1;
-                                    current = bits[col];
-                                }
-                            }
-                            lines.push(count);
-                            console.log(lines);
-
-                            // find start
-                            var bar = 0, start = 0, end = 0;
-                            for (var i = 0; i < (lines.length - 3); i++) {
-
-                                var all = lines.slice(i, i + 59);
-
-                                var total = 0;
-                                for (var j = 0; j < all.length; j++) {
-                                    total += all[j];
-                                }
-                                var bar = total / 95;
-
-                                var variance = (lines[i] / bar) * (lines[i + 1] / bar) * (lines[i + 2] / bar);
-                                console.log('START ========');
-                                console.log(lines[i] + ', ' + lines[i + 1] + ', ' + lines[i + 2]);
-                                console.log(variance);
-
-                                if (Math.abs(1 - variance) < MAX_VARIANCE) {
-
-                                    // check middle
-                                    var variance = (lines[i + 27] / bar) * (lines[i + 28] / bar) * (lines[i + 29] / bar) * (lines[i + 30] / bar) * (lines[i + 31] / bar);
-                                    console.log(lines[i + 27] + ', ' + lines[i + 28] + ', ' + lines[i + 29] + ', ' + lines[i + 30] + ', ' + lines[i + 31]);
-                                    console.log(variance);
-    
-                                    if (Math.abs(1 - variance) < MAX_VARIANCE) {
-
-                                        // check end
-                                        var variance = (lines[i + 56] / bar) * (lines[i + 57] / bar) * (lines[i + 58] / bar);
-                                        console.log(lines[i + 56] + ', ' + lines[i + 57] + ', ' + lines[i + 58]);
-                                        console.log(variance);
-
-                                        if (Math.abs(1 - variance) < MAX_VARIANCE) {
-
-                                            end = i + 59;
-                                            start = i + 3;
-
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-
-                            /*console.log('START');
-                            console.log(start);
-                            console.log(end);
-                            for (var i = 0; i < bits.length; i++) {                        
-                                context.fillStyle = 'rgb(' + bits[i] + ', ' + bits[i] + ', ' + bits[i] + ')';
-                                context.fillRect(i, row, width, 100);
-                            }
-                            context.fillStyle = 'rgba(255, 0, 0, 0.5)';
-                            context.fillRect(0, row, width, 10);*/
-
-                            var GROUP = 6;
-
-                            var isbn = '';
-                            var sum = '';
-
-                            var bars = lines.slice(start, start + 4 * GROUP);
-                            bars = bars.concat(lines.slice(start + 4 * GROUP + 5, start + 4 * 2 * GROUP + 5));
-                            for (var i = 0; i < 2 * GROUP; i++) {
-
-                                var digits = [
-                                    Math.round(bars[i * 4] / bar),
-                                    Math.round(bars[i * 4 + 1] / bar),
-                                    Math.round(bars[i * 4 + 2] / bar),
-                                    Math.round(bars[i * 4 + 3] / bar)
-                                ];
-                                console.log(digits.join(''));
-                                var pattern = PATTERNS[digits.join('')];
-                                if (pattern) {
-                                    sum += 'L';
-                                } else {
-                                    sum += 'G';
-                                    pattern = PATTERNS[digits.reverse().join('')] || 'X';
-                                }
-                                isbn += pattern;
-                            }
-
-                            var first = FIRST_DIGITS[sum.substr(0, 6)] || 'X';
-                            isbn = first + isbn;
-
-                            var count = isbn.split('X').length;
-                            if (count < best) {
-                                best = count;
-                                bestRow = row;
-                                bestIsbn = isbn;
-                                bestBits = bits;
-                                if (isbn.indexOf('X') == -1) {
-                                    break;
-                                }
-                            }
+                            barcode.scan(row);
                         }
 
-                        document.getElementById('isbn').innerHTML = bestIsbn;
+                        document.getElementById('isbn').innerHTML = barcode.best.isbn;
 
-                        for (var i = 0; i < bestBits.length; i++) {                        
-                            context.fillStyle = 'rgb(' + bestBits[i] + ', ' + bestBits[i] + ', ' + bestBits[i] + ')';
-                            context.fillRect(i, bestRow, width, 100);
-                        }
-
-                        context.fillStyle = 'rgba(255, 0, 0, 0.5)';
-                        context.fillRect(0, bestRow, width, 10);
+                        barcode.best.print();
                     };
 
                     var reader = new FileReader();
