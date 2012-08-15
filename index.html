@@ -69,7 +69,7 @@
                                         return true;
                                     }
                                 }
-                                
+
                                 bits.reverse();
                             }
                         }
@@ -109,7 +109,7 @@
                     grey = data[i] + data[i + 1] + data[i + 2];
                     bit = grey < contrast ? 0 : 255;
 
-                    bits.push(bit);
+                    bits[bits.length] = bit;
                 }
 
                 return bits;
@@ -269,7 +269,7 @@
             } catch (e) {
                 alert(e);
             }
-            
+
         </script>
     </body>
 </html>
