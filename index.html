@@ -58,13 +58,19 @@
 
                             var bits = Barcode.convert(data, contrast);
 
-                            var line = new Barcode.Line(bits, x, y, width, height, horizontal);
+                            var reverse = 2;
+                            while (reverse--) {
 
-                            if (line.count < this.best.count) {
-                                this.best = line;
-                                if (line.count == -1) {
-                                    return true;
+                                var line = new Barcode.Line(bits, x, y, width, height, horizontal);
+
+                                if (line.count < this.best.count) {
+                                    this.best = line;
+                                    if (line.count == -1) {
+                                        return true;
+                                    }
                                 }
+                                
+                                bits.reverse();
                             }
                         }
                     }
