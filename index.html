@@ -38,13 +38,18 @@
                         context.drawImage(image, 0, 0, width, height);
 
                         var barcode = new Barcode(context, width, height);
-                        var best = barcode.scan();
+                        var line = barcode.scan();
 
-                        document.getElementById('isbn').innerHTML = best.isbn;
+                        if (line) {
 
-                        console.log(best);
-                        console.log(best.lines);
-                        barcode.print(best);
+                            document.getElementById('isbn').innerHTML = line.isbn;
+
+                            console.log(line);
+                            barcode.print(line);
+
+                        } else {
+                            document.getElementById('isbn').innerHTML = 'Sorry, could not find barcode… please try again';
+                        }
                     };
 
                     image.src = window.webkitURL.createObjectURL(this.files[0]);

@@ -6,22 +6,21 @@ var Barcode = function (context, width, height) {
 };
 
 Barcode.MAX_VARIANCE_SEPARATOR = 0.9;
-Barcode.MAX_VARIANCE = 0.28;
+Barcode.MAX_VARIANCE = 0.27;
 
 Barcode.prototype.scan = function () {
 
     var horizontal = 2;
-    var best = {count: 14};
 
     while (horizontal--) {
 
         var length = horizontal ? this.width : this.height;
-        var scan = 30;
-        var step = length / (scan + 1);
+        var scan = 50;
+        var step = length / scan;
 
         while (scan--) {
 
-            var xy = step * scan;
+            var xy = (step * scan * 1.5) % length;
 
             if (horizontal) {
                 var x = 0;
@@ -36,21 +35,19 @@ Barcode.prototype.scan = function () {
             }
 
             var data = this.context.getImageData(x, y, width, height).data;
+            var grey = Barcode.grey(data);
 
             for (var contrast = 10; contrast <= 750; contrast += 10) {
 
-                var bits = Barcode.convert(data, contrast);
+                var bits = Barcode.convert(grey, contrast);
 
                 var reverse = 2;
                 while (reverse--) {
 
                     var line = new Barcode.Line(bits, x, y, width, height, horizontal);
 
-                    if (line.count < best.count) {
-                        best = line;
-                        if (line.count == -1) {
-                            return best;
-                        }
+                    if (line.parse()) {
+                        return line;
                     }
 
                     bits.reverse();
@@ -59,7 +56,7 @@ Barcode.prototype.scan = function () {
         }
     }
 
-    return best;
+    return false;
 };
 
 Barcode.prototype.print = function (line) {
@@ -83,16 +80,23 @@ Barcode.prototype.print = function (line) {
     }
 };
 
-Barcode.convert = function (data, contrast) {
+Barcode.grey = function (data) {
 
-    var bits = [], grey, bit;
+    var grey = [];
 
     for (var i = 0, n = data.length; i < n; i += 4) {
+        grey[grey.length] = data[i] + data[i + 1] + data[i + 2];
+    }
 
-        grey = data[i] + data[i + 1] + data[i + 2];
-        bit = grey < contrast ? 0 : 255;
+    return grey;
+};
 
-        bits[bits.length] = bit;
+Barcode.convert = function (grey, contrast) {
+
+    var bits = [];
+
+    for (var i = 0, n = grey.length; i < n; i++) {
+        bits[i] = grey[i] < contrast ? 0 : 255;
     }
 
     return bits;
@@ -110,29 +114,26 @@ Barcode.Line = function (bits, x, y, width, height, horizontal) {
     this.bar = 0;
     this.digits = [];
 
+    this.isbn = '';
+};
+
+
+Barcode.Line.prototype.parse = function () {
+
     // run length encoding
-    this.lines = [];
+    var lines = [];
     var current = this.bits[0];
     var count = 0;
     for (var col = 0; col < this.bits.length; col++) {
         if (this.bits[col] == current) {
             count++;
         } else {
-            this.lines.push(count);
+            lines.push(count);
             count = 1;
             current = this.bits[col];
         }
     }
-    this.lines.push(count);
-
-    this.isbn = 'XXXXXXXXXXXX';
-    this.parse(this.lines);
-
-    this.count = this.isbn.split('X').length;
-};
-
-
-Barcode.Line.prototype.parse = function (lines) {
+    lines.push(count);
 
     // find start
     var bar = 0, start = 0, end = 0;
@@ -170,9 +171,9 @@ Barcode.Line.prototype.parse = function (lines) {
     }
 
     if (end == 0) {
-    
+
         // no end found
-        return;
+        return false;
     }
 
     // decode barcode
@@ -203,7 +204,7 @@ Barcode.Line.prototype.parse = function (lines) {
 
         if (!pattern) {
             // no pattern match found
-            return;
+            return false;
         }
 
         isbn += pattern;
@@ -213,14 +214,12 @@ Barcode.Line.prototype.parse = function (lines) {
     
     if (!first) {
         // no first pattern found
-        return;
+        return false;
     }
 
-    isbn = first + isbn;
+    this.isbn = first + isbn;
 
-    if (Barcode.EAN13.checksum(isbn)) {
-        this.isbn = isbn;
-    }
+    return Barcode.EAN13.checksum(this.isbn);
 };
 
 Barcode.EAN13 = {
