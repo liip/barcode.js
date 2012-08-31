@@ -5,9 +5,10 @@ var Barcode = function (context, width, height) {
     this.debug = false;
 };
 
-Barcode.MAX_VARIANCE = 0.5;
+Barcode.MAX_VARIANCE_SEPARATOR = 0.9;
+Barcode.MAX_VARIANCE = 0.28;
 
-Barcode.prototype.scan = function (row) {
+Barcode.prototype.scan = function () {
 
     var horizontal = 2;
     var best = {count: 14};
@@ -124,6 +125,7 @@ Barcode.Line = function (bits, x, y, width, height, horizontal) {
     }
     this.lines.push(count);
 
+    this.isbn = 'XXXXXXXXXXXX';
     this.parse(this.lines);
 
     this.count = this.isbn.split('X').length;
@@ -146,17 +148,17 @@ Barcode.Line.prototype.parse = function (lines) {
 
         var variance = (lines[i] / bar) * (lines[i + 1] / bar) * (lines[i + 2] / bar);
 
-        if (Math.abs(1 - variance) < Barcode.MAX_VARIANCE) {
+        if (Math.abs(1 - variance) < Barcode.MAX_VARIANCE_SEPARATOR) {
 
             // check middle
             var variance = (lines[i + 27] / bar) * (lines[i + 28] / bar) * (lines[i + 29] / bar) * (lines[i + 30] / bar) * (lines[i + 31] / bar);
 
-            if (Math.abs(1 - variance) < Barcode.MAX_VARIANCE) {
+            if (Math.abs(1 - variance) < Barcode.MAX_VARIANCE_SEPARATOR) {
 
                 // check end
                 var variance = (lines[i + 56] / bar) * (lines[i + 57] / bar) * (lines[i + 58] / bar);
 
-                if (Math.abs(1 - variance) < Barcode.MAX_VARIANCE) {
+                if (Math.abs(1 - variance) < Barcode.MAX_VARIANCE_SEPARATOR) {
 
                     end = i + 59;
                     start = i + 3;
@@ -170,7 +172,6 @@ Barcode.Line.prototype.parse = function (lines) {
     if (end == 0) {
     
         // no end found
-        this.isbn = 'XXXXXXXXXXXX';
         return;
     }
 
@@ -197,13 +198,29 @@ Barcode.Line.prototype.parse = function (lines) {
             sum += 'L';
         } else {
             sum += 'G';
-            pattern = Barcode.EAN13.match(digits.reverse(), bar) || 'X';
+            pattern = Barcode.EAN13.match(digits.reverse(), bar);
         }
+
+        if (!pattern) {
+            // no pattern match found
+            return;
+        }
+
         isbn += pattern;
     }
 
-    var first = Barcode.EAN13.FIRST_DIGITS[sum.substr(0, 6)] || 'X';
-    this.isbn = first + isbn;
+    var first = Barcode.EAN13.FIRST_DIGITS[sum.substr(0, 6)] || false;
+    
+    if (!first) {
+        // no first pattern found
+        return;
+    }
+
+    isbn = first + isbn;
+
+    if (Barcode.EAN13.checksum(isbn)) {
+        this.isbn = isbn;
+    }
 };
 
 Barcode.EAN13 = {
@@ -231,9 +248,25 @@ Barcode.EAN13 = {
         'LGLGGL': '8',
         'LGGLGL': '9'
     },
+    checksum: function (isbn) {
+
+        var length = isbn.length;
+        var sum = 0;
+
+        for (var i = 0; i < length; i++) {
+
+            if (i % 2 == 0) {
+                sum += parseInt(isbn[i]);
+            } else {
+                sum += parseInt(isbn[i]) * 3;
+            }
+        }
+
+        return sum % 10 == 0;
+    },
     match: function (digits, bar) {
 
-        var best = 0.21;
+        var best = Barcode.MAX_VARIANCE;
         var variance = 0;
         var match = false;
 
