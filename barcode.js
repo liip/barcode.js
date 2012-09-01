@@ -102,6 +102,25 @@ Barcode.convert = function (grey, contrast) {
     return bits;
 };
 
+Barcode.runlength = function (bits) {
+
+    var lines = [];
+    var current = bits[0];
+    var count = 0;
+    for (var col = 0; col < bits.length; col++) {
+        if (bits[col] == current) {
+            count++;
+        } else {
+            lines.push(count);
+            count = 1;
+            current = bits[col];
+        }
+    }
+    lines.push(count);
+
+    return lines;
+};
+
 Barcode.Line = function (bits, x, y, width, height, horizontal) {
     this.bits = bits;
     this.x = x;
@@ -117,23 +136,9 @@ Barcode.Line = function (bits, x, y, width, height, horizontal) {
     this.isbn = '';
 };
 
-
 Barcode.Line.prototype.parse = function () {
 
-    // run length encoding
-    var lines = [];
-    var current = this.bits[0];
-    var count = 0;
-    for (var col = 0; col < this.bits.length; col++) {
-        if (this.bits[col] == current) {
-            count++;
-        } else {
-            lines.push(count);
-            count = 1;
-            current = this.bits[col];
-        }
-    }
-    lines.push(count);
+    var lines = Barcode.runlength(this.bits);
 
     // find start
     var bar = 0, start = 0, end = 0;
@@ -164,6 +169,7 @@ Barcode.Line.prototype.parse = function () {
                     end = i + 59;
                     start = i + 3;
 
+                    // start, middle and end found
                     break;
                 }
             }
@@ -211,7 +217,7 @@ Barcode.Line.prototype.parse = function () {
     }
 
     var first = Barcode.EAN13.FIRST_DIGITS[sum.substr(0, 6)] || false;
-    
+
     if (!first) {
         // no first pattern found
         return false;
