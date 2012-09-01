@@ -15,7 +15,7 @@ Barcode.prototype.scan = function () {
     while (horizontal--) {
 
         var length = horizontal ? this.width : this.height;
-        var scan = 50;
+        var scan = 10;
         var step = length / scan;
 
         while (scan--) {
