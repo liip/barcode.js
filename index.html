@@ -34,7 +34,7 @@
                         var width = canvas.width;
                         var height = canvas.height;
 
-                        var context = canvas.getContext("2d");
+                        var context = canvas.getContext('2d');
                         context.drawImage(image, 0, 0, width, height);
 
                         var barcode = new Barcode(context, width, height);
@@ -43,8 +43,6 @@
                         if (line) {
 
                             document.getElementById('isbn').innerHTML = line.isbn;
-
-                            console.log(line);
                             barcode.print(line);
 
                         } else {
